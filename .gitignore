@@ -1,0 +1,16 @@
+# Editor settings
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Helm: packaged charts and downloaded dependencies
+*.tgz
+charts/*/charts/
+charts/*/Chart.lock
+
+# Local values and secrets, never commit
+values-local*.yaml
+*.secret.yaml
+.env
