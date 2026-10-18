@@ -1,0 +1,128 @@
+{{- $name := printf "%s-backend" (include "atmos.fullname" .) }}
+{{- $mongo := printf "%s-mongodb" (include "atmos.fullname" .) }}
+{{- $redis := printf "%s-redis" (include "atmos.fullname" .) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "atmos.componentLabels" (dict "ctx" . "component" "backend") | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.backend.enabled }}
+  replicas: {{ .Values.backend.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "atmos.selectorLabels" (dict "ctx" . "component" "backend") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "atmos.componentLabels" (dict "ctx" . "component" "backend") | nindent 8 }}
+      annotations:
+        # Restart pods when the Secret definition changes
+        checksum/secret: {{ include (print $.Template.BasePath "/externalsecret.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: backend
+          image: {{ include "atmos.image" (dict "name" "backend" "image" .Values.backend.image) }}
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.port }}
+          env:
+            - name: OPENWEATHER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: openweather-api-key
+            - name: MONGODB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: mongodb-username
+            - name: MONGODB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: mongodb-password
+            # $(VAR) is expanded by Kubernetes; the generated password is alphanumeric.
+            - name: MONGODB_URL
+              value: mongodb://$(MONGODB_USERNAME):$(MONGODB_PASSWORD)@{{ $mongo }}:{{ .Values.mongodb.port }}/?authSource=admin
+            - name: REDIS_URL
+              value: redis://{{ $redis }}:{{ .Values.redis.port }}
+            {{- $origins := .Values.corsOrigins }}
+            {{- if .Values.gateway.host }}
+            {{- $origins = append $origins (printf "http://%s" .Values.gateway.host) }}
+            {{- end }}
+            {{- if $origins }}
+            - name: CORS_ORIGINS
+              value: {{ join "," $origins | quote }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          securityContext:
+            {{- include "atmos.containerSecurityContext" . | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "atmos.componentLabels" (dict "ctx" . "component" "backend") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "atmos.selectorLabels" (dict "ctx" . "component" "backend") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.backend.port }}
+      targetPort: http
+{{- if .Values.autoscaling.backend.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "atmos.componentLabels" (dict "ctx" . "component" "backend") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}
+  minReplicas: {{ .Values.autoscaling.backend.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.backend.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.backend.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- if .Values.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "atmos.componentLabels" (dict "ctx" . "component" "backend") | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "atmos.selectorLabels" (dict "ctx" . "component" "backend") | nindent 6 }}
+{{- end }}

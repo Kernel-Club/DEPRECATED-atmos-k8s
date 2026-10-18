@@ -1,0 +1,100 @@
+# Defaults for every environment. Environment differences live in
+# values-dev.yaml and values-prod.yaml.
+
+# dev | prod. Selects the Secrets Manager path: project-atmos/<environment>/...
+environment: dev
+
+backend:
+  image:
+    repository: streetflow13/project-atmos-backend
+    # Set by CD (dev-v1.0.0-<sha6> / prod-v1.0.0-<sha6>). Required.
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 8000
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+frontend:
+  image:
+    repository: streetflow13/project-atmos-frontend
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 1
+  containerPort: 5173
+  servicePort: 80
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 256Mi }
+
+mongodb:
+  image:
+    repository: mongo
+    tag: "8.0"
+  port: 27017
+  database: project_atmos
+  persistence:
+    size: 5Gi
+    # Empty = the cluster default StorageClass (EBS CSI is installed by Terraform)
+    storageClass: ""
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+redis:
+  image:
+    repository: redis
+    tag: "8.0"
+  port: 6379
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 128Mi }
+
+# Kubernetes Secret read by the pods. Keys: openweather-api-key,
+# mongodb-username, mongodb-password.
+secrets:
+  name: atmos-secrets
+  externalSecrets:
+    # true: External Secrets Operator creates the Secret from AWS Secrets Manager
+    # (names are created by project-atmos-iac).
+    # false: create the Secret yourself (e.g. kubectl create secret ... for kind/minikube).
+    enabled: true
+    apiVersion: external-secrets.io/v1
+    refreshInterval: 1h
+    # Secret names are <remotePrefix>/<environment>/openweather-api-key and .../mongodb
+    remotePrefix: project-atmos
+    store:
+      # Creates a namespaced SecretStore. ESO authenticates with its own Pod
+      # Identity role, so no credentials are stored here.
+      create: true
+      name: aws-secrets-manager
+      kind: SecretStore
+      region: ap-northeast-2
+
+# External access: AWS ALB through Gateway API (no Ingress controller).
+gateway:
+  enabled: true
+  className: aws-alb
+  # Hostname used by the route. Empty = match any host (works on the ALB DNS name).
+  # CD fills it with <prefix>.<alb-ip>.nip.io, see scripts/nip-host.sh.
+  host: ""
+  hostPrefix: atmos
+  scheme: internet-facing
+  # GatewayClass is cluster-scoped and is normally created by the platform.
+  # Enable only if nobody else created it.
+  createGatewayClass: false
+
+# Extra CORS origins for the backend. The browser calls a relative /api, so
+# CORS is only needed for direct access. The gateway host is added automatically.
+corsOrigins: []
+
+podDisruptionBudget:
+  enabled: false
+
+autoscaling:
+  backend:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 80

@@ -1,0 +1,8 @@
+environment: dev
+
+mongodb:
+  persistence:
+    size: 2Gi
+
+gateway:
+  hostPrefix: atmos-dev

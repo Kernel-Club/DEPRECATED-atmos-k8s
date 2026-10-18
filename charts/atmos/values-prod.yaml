@@ -1,0 +1,16 @@
+environment: prod
+
+backend:
+  replicas: 2
+frontend:
+  replicas: 2
+
+mongodb:
+  persistence:
+    size: 5Gi
+
+gateway:
+  hostPrefix: atmos
+
+podDisruptionBudget:
+  enabled: true
