@@ -89,9 +89,47 @@ jobs:
             --version "$EXTERNAL_SECRETS_VERSION" -n external-secrets --create-namespace \
             --atomic --wait --timeout 5m
 
+      # The dev/prod deploy roles only have AmazonEKSEditPolicy, which does not cover CRDs.
+      # Their access entries put them in the group "deployers" (project-atmos-iac).
+      - name: Allow deploy roles to manage the chart's CRDs
+        run: |
+          for ns in dev prod; do
+            kubectl apply -n "$ns" -f - <<'EOF'
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: deployer-crds
+          rules:
+            - apiGroups: [external-secrets.io]
+              resources: [externalsecrets, secretstores]
+              verbs: [get, list, watch, create, update, patch, delete]
+            - apiGroups: [gateway.networking.k8s.io]
+              resources: [gateways, httproutes]
+              verbs: [get, list, watch, create, update, patch, delete]
+            - apiGroups: [gateway.k8s.aws]
+              resources: [loadbalancerconfigurations, targetgroupconfigurations]
+              verbs: [get, list, watch, create, update, patch, delete]
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: deployer-crds
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: Role
+            name: deployer-crds
+          subjects:
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: deployers
+          EOF
+          done
+
       - name: Check
         run: |
           kubectl get namespaces dev prod
+          kubectl get rolebinding deployer-crds -n dev
+          kubectl get rolebinding deployer-crds -n prod
           kubectl get gatewayclass aws-alb
           kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
           kubectl get pods -n external-secrets
