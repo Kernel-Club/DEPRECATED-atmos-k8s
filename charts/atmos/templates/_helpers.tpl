@@ -32,8 +32,9 @@ seccompProfile:
   type: RuntimeDefault
 {{- end }}
 
-{{/* Fails the render if an image tag was not passed. pass (dict "name" "backend" "image" .Values.backend.image) */}}
+{{/* Fails the render if an image repository or tag was not passed. pass (dict "name" "backend" "image" .Values.backend.image) */}}
 {{- define "atmos.image" -}}
-{{- $tag := required (printf "%s.image.tag is required (pass --set %s.image.tag=<tag>)" .name .name) .image.tag -}}
-{{- printf "%s:%s" .image.repository $tag -}}
+{{- $repository := required (printf "%s.image.repository is required" .name) .image.repository -}}
+{{- $tag := required (printf "%s.image.tag is required" .name) .image.tag -}}
+{{- printf "%s:%s" $repository $tag -}}
 {{- end }}

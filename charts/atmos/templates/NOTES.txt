@@ -3,12 +3,4 @@ Project Atmos ({{ .Values.environment }}) released as {{ .Release.Name }} in nam
 
 Load balancer address (appears after a few minutes):
   kubectl get gateway {{ include "atmos.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath='{.status.addresses[0].value}'
-{{- if .Values.gateway.host }}
-
-URL: http://{{ .Values.gateway.host }}
-{{- else }}
-
-No gateway.host set: the app answers on the load balancer DNS name.
-nip.io host: scripts/nip-host.sh {{ .Release.Namespace }} {{ include "atmos.fullname" . }} {{ .Values.gateway.hostPrefix }}
-{{- end }}
 {{- end }}

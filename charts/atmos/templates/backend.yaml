@@ -19,7 +19,6 @@ spec:
       labels:
         {{- include "atmos.componentLabels" (dict "ctx" . "component" "backend") | nindent 8 }}
       annotations:
-        # Restart pods when the Secret definition changes
         checksum/secret: {{ include (print $.Template.BasePath "/externalsecret.yaml") . | sha256sum }}
     spec:
       containers:
@@ -45,18 +44,14 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secrets.name }}
                   key: mongodb-password
-            # $(VAR) is expanded by Kubernetes; the generated password is alphanumeric.
+            # $(VAR) is expanded by Kubernetes.
             - name: MONGODB_URL
               value: mongodb://$(MONGODB_USERNAME):$(MONGODB_PASSWORD)@{{ $mongo }}:{{ .Values.mongodb.port }}/?authSource=admin
             - name: REDIS_URL
               value: redis://{{ $redis }}:{{ .Values.redis.port }}
-            {{- $origins := .Values.corsOrigins }}
-            {{- if .Values.gateway.host }}
-            {{- $origins = append $origins (printf "http://%s" .Values.gateway.host) }}
-            {{- end }}
-            {{- if $origins }}
+            {{- with .Values.corsOrigins }}
             - name: CORS_ORIGINS
-              value: {{ join "," $origins | quote }}
+              value: {{ join "," . | quote }}
             {{- end }}
           readinessProbe:
             httpGet:

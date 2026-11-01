@@ -9,8 +9,5 @@ mongodb:
   persistence:
     size: 5Gi
 
-gateway:
-  hostPrefix: atmos
-
 podDisruptionBudget:
   enabled: true

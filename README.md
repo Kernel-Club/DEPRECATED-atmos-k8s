@@ -17,7 +17,6 @@ charts/atmos/
   values-dev.yaml      namespace dev
   values-prod.yaml     namespace prod
   templates/           backend, frontend, mongodb, redis, externalsecret, gateway
-scripts/nip-host.sh    builds the <prefix>.<alb-ip>.nip.io host
 ```
 
 ## What the chart creates
@@ -28,32 +27,37 @@ scripts/nip-host.sh    builds the <prefix>.<alb-ip>.nip.io host
 - **ExternalSecret** `atmos-secrets`: filled from AWS Secrets Manager (`project-atmos/<env>/openweather-api-key`, `project-atmos/<env>/mongodb`) by External Secrets Operator, plus a namespaced `SecretStore`.
 - **Gateway API** for the AWS ALB: `Gateway`, `HTTPRoute` (`/api` -> backend, `/` -> frontend), `LoadBalancerConfiguration`, `TargetGroupConfiguration`.
 
-## Needs from the platform (installed once, not by this chart)
+## Platform (installed once per cluster, not by this chart)
 
-Namespaces `dev` and `prod`, External Secrets Operator, AWS Load Balancer Controller with Gateway API enabled, Gateway API CRDs and the `aws-alb` GatewayClass (or set `gateway.createGatewayClass=true`).
+The workflow `.github/workflows/platform.yml` installs: namespaces `dev` and `prod`, Gateway API CRDs, AWS Load Balancer Controller (Gateway API enabled), the `aws-alb` GatewayClass and External Secrets Operator. Run it by hand: Actions -> Platform -> Run workflow, then approve. Run it again after every new cluster. Versions are set at the top of the file.
+
+It runs in the GitHub Environment `platform` (needs approval) with the variable `AWS_GITHUB_ACTIONS_ROLE_ARN` (cluster admin role from `project-atmos-iac`).
 
 ## Deploy
 
-CD in `project-atmos-dev` does this; by hand:
+The workflow `.github/workflows/cd.yml` deploys to `dev`. It starts when `project-atmos-dev` pushes new images (a `deploy` event with the image tag), or by hand (Actions -> CD -> Run workflow, enter a tag like `v1.0.0-a1b2c3`).
 
-```bash
-helm upgrade --install atmos charts/atmos -n dev -f charts/atmos/values-dev.yaml \
-  --set backend.image.tag=dev-v1.0.0-abc123 \
-  --set frontend.image.tag=dev-v1.0.0-abc123 \
-  --atomic --wait
+It runs in the GitHub Environment `development`, which holds the variable `AWS_GITHUB_ACTIONS_ROLE_ARN`. Organization variables used: `AWS_REGION`, `PROJECT_NAME`, `DOCKERHUB_NAMESPACE`. The cluster name is `<PROJECT_NAME>-eks`, the images are `<DOCKERHUB_NAMESPACE>/<PROJECT_NAME>-backend` and `-frontend`.
+
+By hand (also for `prod`, which has no workflow yet): the chart has no defaults for images, region and secret prefix, so put them in a local file (ignored by git):
+
+```yaml
+# values-local.yaml
+backend:
+  image: {repository: <namespace>/<project>-backend, tag: v1.0.0-a1b2c3}
+frontend:
+  image: {repository: <namespace>/<project>-frontend, tag: v1.0.0-a1b2c3}
+secrets:
+  externalSecrets:
+    remotePrefix: <project>
+    store: {region: <region>}
 ```
 
-Image tags have no default: rendering fails without them.
+```bash
+helm upgrade --install atmos charts/atmos -n dev -f charts/atmos/values-dev.yaml -f values-local.yaml --atomic --wait
+```
 
-## nip.io domain
-
-The ALB address is only known after it is created, so CD deploys first, then runs
-`scripts/nip-host.sh <namespace> atmos <prefix>` and sets `gateway.host`:
-
-- dev: `http://atmos-dev.<ip>.nip.io`
-- prod: `http://atmos.<ip>.nip.io`
-
-Without `gateway.host` the route matches any host, so the app also works on the ALB DNS name. After a new cluster (new ALB) just run CD again.
+Rendering fails if one of these values is missing.
 
 ## Without AWS (kind / minikube)
 
@@ -63,13 +67,13 @@ kubectl create secret generic atmos-secrets -n dev \
   --from-literal=mongodb-username=atmos \
   --from-literal=mongodb-password=pass
 helm upgrade --install atmos charts/atmos -n dev \
-  --set backend.image.tag=... --set frontend.image.tag=... \
+  -f values-local.yaml \
   --set secrets.externalSecrets.enabled=false --set gateway.enabled=false
 ```
 
 ## Checks
 
 ```bash
-helm lint charts/atmos --set backend.image.tag=x --set frontend.image.tag=x
-helm template atmos charts/atmos -f charts/atmos/values-prod.yaml --set backend.image.tag=x --set frontend.image.tag=x
+helm lint charts/atmos -f values-local.yaml
+helm template atmos charts/atmos -f charts/atmos/values-prod.yaml -f values-local.yaml
 ```

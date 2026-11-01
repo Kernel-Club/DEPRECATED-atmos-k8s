@@ -1,13 +1,12 @@
-# Defaults for every environment. Environment differences live in
-# values-dev.yaml and values-prod.yaml.
+# Defaults for every environment; differences are in values-dev.yaml and values-prod.yaml.
 
-# dev | prod. Selects the Secrets Manager path: project-atmos/<environment>/...
+# dev | prod. Part of the Secrets Manager path.
 environment: dev
 
 backend:
   image:
-    repository: streetflow13/project-atmos-backend
-    # Set by CD (dev-v1.0.0-<sha6> / prod-v1.0.0-<sha6>). Required.
+    # Repository and tag are set by CD. Required.
+    repository: ""
     tag: ""
     pullPolicy: IfNotPresent
   replicas: 1
@@ -18,7 +17,7 @@ backend:
 
 frontend:
   image:
-    repository: streetflow13/project-atmos-frontend
+    repository: ""
     tag: ""
     pullPolicy: IfNotPresent
   replicas: 1
@@ -36,7 +35,7 @@ mongodb:
   database: project_atmos
   persistence:
     size: 5Gi
-    # Empty = the cluster default StorageClass (EBS CSI is installed by Terraform)
+    # Empty = the cluster default StorageClass
     storageClass: ""
   resources:
     requests: { cpu: 100m, memory: 256Mi }
@@ -51,42 +50,34 @@ redis:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { cpu: 250m, memory: 128Mi }
 
-# Kubernetes Secret read by the pods. Keys: openweather-api-key,
-# mongodb-username, mongodb-password.
+# Secret read by the pods: openweather-api-key, mongodb-username, mongodb-password.
 secrets:
   name: atmos-secrets
   externalSecrets:
-    # true: External Secrets Operator creates the Secret from AWS Secrets Manager
-    # (names are created by project-atmos-iac).
-    # false: create the Secret yourself (e.g. kubectl create secret ... for kind/minikube).
+    # true: External Secrets Operator fills the Secret from AWS Secrets Manager.
+    # false: create the Secret yourself (kind/minikube).
     enabled: true
     apiVersion: external-secrets.io/v1
     refreshInterval: 1h
-    # Secret names are <remotePrefix>/<environment>/openweather-api-key and .../mongodb
-    remotePrefix: project-atmos
+    # Secrets Manager prefix (the project name). Required.
+    remotePrefix: ""
     store:
-      # Creates a namespaced SecretStore. ESO authenticates with its own Pod
-      # Identity role, so no credentials are stored here.
+      # Namespaced SecretStore; ESO logs in with its own Pod Identity role.
       create: true
       name: aws-secrets-manager
       kind: SecretStore
-      region: ap-northeast-2
+      # Required.
+      region: ""
 
-# External access: AWS ALB through Gateway API (no Ingress controller).
+# External access: AWS ALB through Gateway API.
 gateway:
   enabled: true
   className: aws-alb
-  # Hostname used by the route. Empty = match any host (works on the ALB DNS name).
-  # CD fills it with <prefix>.<alb-ip>.nip.io, see scripts/nip-host.sh.
-  host: ""
-  hostPrefix: atmos
   scheme: internet-facing
-  # GatewayClass is cluster-scoped and is normally created by the platform.
-  # Enable only if nobody else created it.
+  # The GatewayClass is normally created by the platform.
   createGatewayClass: false
 
-# Extra CORS origins for the backend. The browser calls a relative /api, so
-# CORS is only needed for direct access. The gateway host is added automatically.
+# Extra CORS origins for the backend (the browser uses a relative /api).
 corsOrigins: []
 
 podDisruptionBudget:

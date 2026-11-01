@@ -23,8 +23,7 @@ spec:
             - name: http
               containerPort: {{ .Values.frontend.containerPort }}
           env:
-            # Fallback for direct access to the frontend: Vite preview proxies /api to the backend.
-            # Through the Gateway, /api goes straight to the backend.
+            # Used only for direct access; the Gateway sends /api straight to the backend.
             - name: API_PROXY_TARGET
               value: http://{{ include "atmos.fullname" . }}-backend:{{ .Values.backend.port }}
           readinessProbe:

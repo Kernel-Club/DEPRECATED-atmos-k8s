@@ -1,0 +1,101 @@
+name: CD
+
+# Started by project-atmos-dev after it pushed new images: a "deploy" event with the image tag.
+# Can also be started by hand.
+on:
+  repository_dispatch:
+    types: [deploy]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Image tag on Docker Hub, e.g. v1.0.0-a1b2c3
+        required: true
+
+# id-token: write is needed to log in to AWS with OIDC (no access keys).
+permissions:
+  id-token: write
+  contents: read
+
+# One deploy at a time; a newer one waits.
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+env:
+  RELEASE: atmos
+  NAMESPACE: dev
+  CHART: charts/atmos
+  BACKEND_IMAGE: ${{ vars.DOCKERHUB_NAMESPACE }}/${{ vars.PROJECT_NAME }}-backend
+  FRONTEND_IMAGE: ${{ vars.DOCKERHUB_NAMESPACE }}/${{ vars.PROJECT_NAME }}-frontend
+  IMAGE_TAG: ${{ github.event.client_payload.image_tag || inputs.image_tag }}
+
+jobs:
+  deploy:
+    name: Deploy to dev
+    runs-on: ubuntu-latest
+    # Must match the environment allowed by the AWS role.
+    environment: development
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check the image tag
+        run: |
+          [[ "$IMAGE_TAG" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Bad image tag: '$IMAGE_TAG'"; exit 1; }
+          echo "Deploying tag: $IMAGE_TAG"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      # Everything that comes from GitHub variables goes into one values file.
+      - name: Prepare values
+        run: |
+          cat > "$RUNNER_TEMP/values-ci.yaml" <<EOF
+          backend:
+            image:
+              repository: ${BACKEND_IMAGE}
+              tag: ${IMAGE_TAG}
+          frontend:
+            image:
+              repository: ${FRONTEND_IMAGE}
+              tag: ${IMAGE_TAG}
+          secrets:
+            externalSecrets:
+              remotePrefix: ${{ vars.PROJECT_NAME }}
+              store:
+                region: ${{ vars.AWS_REGION }}
+          EOF
+
+      - name: Check the chart
+        run: helm lint "$CHART" -f "$CHART/values-dev.yaml" -f "$RUNNER_TEMP/values-ci.yaml"
+
+      - name: Check that both images exist on Docker Hub
+        run: |
+          docker manifest inspect "$BACKEND_IMAGE:$IMAGE_TAG" > /dev/null
+          docker manifest inspect "$FRONTEND_IMAGE:$IMAGE_TAG" > /dev/null
+
+      - name: Log in to AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Connect kubectl to the cluster
+        run: aws eks update-kubeconfig --region "${{ vars.AWS_REGION }}" --name "${{ vars.PROJECT_NAME }}-eks"
+
+      # --atomic rolls back if the release does not become ready in time.
+      - name: Deploy
+        run: |
+          helm upgrade --install "$RELEASE" "$CHART" -n "$NAMESPACE" \
+            -f "$CHART/values-dev.yaml" \
+            -f "$RUNNER_TEMP/values-ci.yaml" \
+            --atomic --wait --timeout 5m
+
+      - name: Check
+        run: |
+          kubectl get pods -n "$NAMESPACE"
+          kubectl rollout status deploy/"$RELEASE"-backend -n "$NAMESPACE" --timeout=60s
+          kubectl rollout status deploy/"$RELEASE"-frontend -n "$NAMESPACE" --timeout=60s
+          address=$(kubectl get gateway "$RELEASE" -n "$NAMESPACE" -o jsonpath='{.status.addresses[0].value}')
+          [[ -z "$address" ]] || echo "http://${address}" >> "$GITHUB_STEP_SUMMARY"

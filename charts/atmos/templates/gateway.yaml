@@ -9,7 +9,6 @@ spec:
   controllerName: gateway.k8s.aws/alb
 ---
 {{- end }}
-# ALB settings for the Gateway (the AWS Load Balancer Controller creates the ALB).
 apiVersion: gateway.k8s.aws/v1beta1
 kind: LoadBalancerConfiguration
 metadata:
@@ -40,7 +39,7 @@ spec:
         namespaces:
           from: Same
 ---
-# Pods are reached directly by IP (the Services are ClusterIP).
+# The ALB sends traffic straight to pod IPs.
 apiVersion: gateway.k8s.aws/v1beta1
 kind: TargetGroupConfiguration
 metadata:
@@ -78,10 +77,6 @@ metadata:
 spec:
   parentRefs:
     - name: {{ $fullname }}
-  {{- with .Values.gateway.host }}
-  hostnames:
-    - {{ . | quote }}
-  {{- end }}
   rules:
     - matches:
         - path:
