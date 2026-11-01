@@ -89,6 +89,26 @@ jobs:
             --version "$EXTERNAL_SECRETS_VERSION" -n external-secrets --create-namespace \
             --atomic --wait --timeout 5m
 
+      # New EKS clusters have no default StorageClass, so PVCs without a class stay Pending.
+      # The EBS CSI driver is an EKS addon (project-atmos-iac).
+      - name: Create the default StorageClass
+        run: |
+          kubectl apply -f - <<'EOF'
+          apiVersion: storage.k8s.io/v1
+          kind: StorageClass
+          metadata:
+            name: gp3
+            annotations:
+              storageclass.kubernetes.io/is-default-class: "true"
+          provisioner: ebs.csi.aws.com
+          parameters:
+            type: gp3
+            encrypted: "true"
+          reclaimPolicy: Delete
+          volumeBindingMode: WaitForFirstConsumer
+          allowVolumeExpansion: true
+          EOF
+
       # The dev/prod deploy roles only have AmazonEKSEditPolicy, which does not cover CRDs.
       # Their access entries put them in the group "deployers" (project-atmos-iac).
       - name: Allow deploy roles to manage the chart's CRDs
@@ -128,6 +148,7 @@ jobs:
       - name: Check
         run: |
           kubectl get namespaces dev prod
+          kubectl get storageclass gp3
           kubectl get rolebinding deployer-crds -n dev
           kubectl get rolebinding deployer-crds -n prod
           kubectl get gatewayclass aws-alb
