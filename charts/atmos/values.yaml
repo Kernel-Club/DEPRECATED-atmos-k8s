@@ -74,7 +74,7 @@ gateway:
   enabled: true
   className: aws-alb
   scheme: internet-facing
-  # The GatewayClass is normally created by the platform.
+  # The GatewayClass is normally created by Terraform (project-atmos-iac, modules/platform).
   createGatewayClass: false
 
 # Extra CORS origins for the backend (the browser uses a relative /api).

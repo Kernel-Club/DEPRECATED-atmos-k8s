@@ -27,11 +27,9 @@ charts/atmos/
 - **ExternalSecret** `atmos-secrets`: filled from AWS Secrets Manager (`project-atmos/<env>/openweather-api-key`, `project-atmos/<env>/mongodb`) by External Secrets Operator, plus a namespaced `SecretStore`.
 - **Gateway API** for the AWS ALB: `Gateway`, `HTTPRoute` (`/api` -> backend, `/` -> frontend), `LoadBalancerConfiguration`, `TargetGroupConfiguration`.
 
-## Platform (installed once per cluster, not by this chart)
+## Platform (part of the infrastructure, not of this chart)
 
-The workflow `.github/workflows/platform.yml` installs: namespaces `dev` and `prod`, Gateway API CRDs, AWS Load Balancer Controller (Gateway API enabled), the `aws-alb` GatewayClass and External Secrets Operator. Run it by hand: Actions -> Platform -> Run workflow, then approve. Run it again after every new cluster. Versions are set at the top of the file.
-
-It runs in the GitHub Environment `platform` (needs approval) with the variable `AWS_GITHUB_ACTIONS_ROLE_ARN` (cluster admin role from `project-atmos-iac`).
+What the chart expects from the cluster is created by Terraform in `project-atmos-iac` (`modules/platform`), in the same `apply` as the cluster: namespaces `dev` and `prod`, default StorageClass `gp3`, Gateway API CRDs, AWS Load Balancer Controller (Gateway API enabled), the `aws-alb` GatewayClass, External Secrets Operator and the RBAC that lets the deploy roles manage the chart's CRDs. This repository only deploys the app and has no cluster admin rights.
 
 ## Deploy
 
